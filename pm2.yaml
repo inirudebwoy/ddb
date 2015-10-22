@@ -1,0 +1,4 @@
+init_config:
+
+instances:
+  - command: /usr/bin/pm2 jlist
