@@ -1,6 +1,7 @@
 #  PYTHONPATH=.:/usr/share/datadog/agent/ python checks.d/pm2.py
 import subprocess
 import json
+import time
 
 from checks import AgentCheck
 
@@ -8,21 +9,33 @@ from checks import AgentCheck
 def load_json(command):
     p = subprocess.Popen(command, stdout=subprocess.PIPE)
     out = p.communicate()[0]
-    return json.loads(out)[0]
+    return json.loads(out)
 
 
 class Pm2(AgentCheck):
 
     def check(self, instance):
-        try:
-            json_data = load_json(instance['command'].split(' '))
-        except (ValueError, IndexError):
-            return
-        # cpu, memory, errors, processes, restart, online, status
-        self.gauge('pm2.processes.cpu', json_data['monit']['cpu'])
-        self.gauge('pm2.processes.memory', json_data['monit']['memory'])
-        self.gauge('pm2.processes.status', json_data['pm2_env']['status'])
-        self.gauge('pm2.processes.uptime', json_data['pm2_env']['pm_uptime'])
+        totals = {'cpu': 0, 'memory': 0}
+        for instance in load_json(instance['command'].split(' ')):
+            node_app_instance = instance['pm2_env']['NODE_APP_INSTANCE']
+            # cpu, memory, errors, processes, restart, online, status
+            self.gauge(
+                'pm2.processes.n{}_cpu'.format(node_app_instance),
+                instance['monit']['cpu'])
+            totals['cpu'] += instance['monit']['cpu']
+            self.gauge(
+                'pm2.processes.n{}_memory'.format(node_app_instance),
+                instance['monit']['memory'])
+            totals['memory'] += instance['monit']['memory']
+            self.gauge(
+                'pm2.processes.n{}_status'.format(node_app_instance),
+                instance['pm2_env']['status'])
+            self.gauge(
+                'pm2.processes.n{}_uptime'.format(node_app_instance),
+                int(time.time()) - int(instance['pm2_env']['pm_uptime']))
+
+        self.gauge('pm2.processes.total_cpu', totals['cpu'])
+        self.gauge('pm2.processes.total_memory', totals['memory'])
 
 
 if __name__ == '__main__':
